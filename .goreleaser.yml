@@ -1,0 +1,52 @@
+project_name: haide
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: haide
+    main: ./cmd/haide
+    binary: haide
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+
+archives:
+  - id: haide
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+
+brews:
+  - name: haide
+    repository:
+      owner: buckleypaul
+      name: homebrew-tap
+    homepage: "https://github.com/buckleypaul/haide"
+    description: "AI File Exclusion Manager for Git"
+    license: "MIT"
+    install: |
+      bin.install "haide"
+    test: |
+      system "#{bin}/haide", "--help"
