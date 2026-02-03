@@ -1,20 +1,18 @@
 package config
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/BurntSushi/toml"
 )
 
 // Config represents the haide configuration structure
 type Config struct {
-	Global   []string            `toml:"global"`
-	Projects map[string][]string `toml:"-"`
+	Global   []string
+	Projects map[string][]string
 	path     string
-	raw      map[string]interface{}
 }
 
 // DefaultGlobalExclusions returns the default list of AI files to exclude
@@ -65,13 +63,13 @@ func DefaultGlobalExclusions() []string {
 // GetConfigPath returns the path to the config file
 func GetConfigPath() string {
 	if haideHome := os.Getenv("HAIDE_HOME"); haideHome != "" {
-		return filepath.Join(haideHome, "config.toml")
+		return filepath.Join(haideHome, "config.ini")
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		panic(fmt.Sprintf("failed to get user home directory: %v", err))
 	}
-	return filepath.Join(home, ".haide", "config.toml")
+	return filepath.Join(home, ".haide", "config.ini")
 }
 
 // Load loads the configuration from the config file
@@ -83,40 +81,64 @@ func Load() (*Config, error) {
 		return createDefault()
 	}
 
-	var raw map[string]interface{}
-	if _, err := toml.DecodeFile(configPath, &raw); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
+	file, err := os.Open(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open config: %w", err)
 	}
+	defer file.Close()
 
 	config := &Config{
 		Projects: make(map[string][]string),
 		path:     configPath,
-		raw:      raw,
 	}
 
-	// Parse global section
-	if globalRaw, ok := raw["global"].([]interface{}); ok {
-		for _, item := range globalRaw {
-			if str, ok := item.(string); ok {
-				config.Global = append(config.Global, str)
-			}
-		}
-	}
+	scanner := bufio.NewScanner(file)
+	var currentSection string
+	lineNum := 0
 
-	// Parse project sections
-	for key, value := range raw {
-		if key == "global" {
+	for scanner.Scan() {
+		lineNum++
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if patterns, ok := value.([]interface{}); ok {
-			var projectPatterns []string
-			for _, item := range patterns {
-				if str, ok := item.(string); ok {
-					projectPatterns = append(projectPatterns, str)
-				}
+
+		// Check for section header
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			sectionName := strings.TrimSpace(line[1 : len(line)-1])
+
+			// Handle [global] section
+			if sectionName == "global" {
+				currentSection = "global"
+				continue
 			}
-			config.Projects[key] = projectPatterns
+
+			// Handle [project:name] section
+			if strings.HasPrefix(sectionName, "project:") {
+				currentSection = strings.TrimPrefix(sectionName, "project:")
+				continue
+			}
+
+			return nil, fmt.Errorf("line %d: invalid section name %q (must be [global] or [project:name])", lineNum, sectionName)
 		}
+
+		// Pattern line
+		if currentSection == "" {
+			return nil, fmt.Errorf("line %d: pattern %q found outside of section", lineNum, line)
+		}
+
+		pattern := strings.TrimSpace(line)
+		if currentSection == "global" {
+			config.Global = append(config.Global, pattern)
+		} else {
+			config.Projects[currentSection] = append(config.Projects[currentSection], pattern)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read config: %w", err)
 	}
 
 	return config, nil
@@ -136,7 +158,6 @@ func createDefault() (*Config, error) {
 		Global:   DefaultGlobalExclusions(),
 		Projects: make(map[string][]string),
 		path:     configPath,
-		raw:      make(map[string]interface{}),
 	}
 
 	if err := config.Save(); err != nil {
@@ -148,32 +169,64 @@ func createDefault() (*Config, error) {
 
 // Save saves the configuration to disk
 func (c *Config) Save() error {
-	// Build the TOML structure
-	data := make(map[string]interface{})
-	data["global"] = c.Global
-
-	// Add project sections
-	for project, patterns := range c.Projects {
-		data[project] = patterns
-	}
-
-	// Open file for writing
-	f, err := os.Create(c.path)
+	// Create temp file for atomic write
+	tmpPath := c.path + ".tmp"
+	f, err := os.Create(tmpPath)
 	if err != nil {
-		return fmt.Errorf("failed to create config file: %w", err)
+		return fmt.Errorf("failed to create temp config file: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		f.Close()
+		os.Remove(tmpPath) // Clean up on error
+	}()
 
-	// Write header comment
-	f.WriteString("# haide configuration file\n")
-	f.WriteString("# Global exclusions apply to all repositories\n")
-	f.WriteString("# Project-specific sections are keyed by repository basename\n")
-	f.WriteString("# Use +PATTERN to override a global exclusion for a specific project\n\n")
+	// Write header comments
+	if _, err := f.WriteString("# haide configuration file\n"); err != nil {
+		return fmt.Errorf("failed to write header: %w", err)
+	}
+	if _, err := f.WriteString("# Global exclusions apply to all repositories\n"); err != nil {
+		return fmt.Errorf("failed to write header: %w", err)
+	}
+	if _, err := f.WriteString("# Project-specific sections use [project:name] format\n"); err != nil {
+		return fmt.Errorf("failed to write header: %w", err)
+	}
+	if _, err := f.WriteString("# Use +PATTERN to override a global exclusion for specific project\n\n"); err != nil {
+		return fmt.Errorf("failed to write header: %w", err)
+	}
 
-	// Encode TOML
-	encoder := toml.NewEncoder(f)
-	if err := encoder.Encode(data); err != nil {
-		return fmt.Errorf("failed to encode config: %w", err)
+	// Write global section
+	if _, err := f.WriteString("[global]\n"); err != nil {
+		return fmt.Errorf("failed to write global section: %w", err)
+	}
+	for _, pattern := range c.Global {
+		if _, err := f.WriteString(pattern + "\n"); err != nil {
+			return fmt.Errorf("failed to write global pattern: %w", err)
+		}
+	}
+
+	// Write project sections
+	for projectName, patterns := range c.Projects {
+		if _, err := f.WriteString("\n[project:" + projectName + "]\n"); err != nil {
+			return fmt.Errorf("failed to write project section: %w", err)
+		}
+		for _, pattern := range patterns {
+			if _, err := f.WriteString(pattern + "\n"); err != nil {
+				return fmt.Errorf("failed to write project pattern: %w", err)
+			}
+		}
+	}
+
+	// Sync and close
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("failed to sync config: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("failed to close config: %w", err)
+	}
+
+	// Atomic rename
+	if err := os.Rename(tmpPath, c.path); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
 	}
 
 	return nil

@@ -113,50 +113,33 @@ Options:
 
 ## Configuration
 
-haide stores configuration at `~/.haide/config.toml` (or `$HAIDE_HOME/config.toml` if set).
+haide stores configuration at `~/.haide/config.ini` (or `$HAIDE_HOME/config.ini` if set).
 
 ### Default Global Exclusions
 
 On first use, haide creates a default configuration with common AI coding artifacts:
 
-```toml
+```ini
 [global]
-# Claude AI
 CLAUDE.md
 AGENTS.md
 .claude/
 .clauderc
-
-# Cursor
 .cursorrules
 .cursorignore
-
-# GitHub Copilot
 .github/copilot-instructions.md
-
-# Cody
 .cody/
-
-# AI-generated documentation
 AI_NOTES.md
 AI_TODO.md
 .ai/
-
-# Common AI skill/plugin directories
 skills/
 .skills/
 ai-skills/
-
-# AI conversation logs
 ai-conversations/
 .ai-logs/
-
-# AI prompts and templates
 prompts/
 .prompts/
 ai-prompts/
-
-# AI config files
 .aiconfig
 .ai-config.json
 .ai-config.yaml
@@ -166,10 +149,10 @@ ai-prompts/
 
 To include a globally-excluded file in a specific project, haide automatically adds override entries (prefixed with `+`):
 
-```toml
-[myproject]
-"+CLAUDE.md"  # Include CLAUDE.md despite global exclusion
-"my-notes.md"  # Also exclude this project-specific file
+```ini
+[project:myproject]
++CLAUDE.md
+my-notes.md
 ```
 
 ### Pattern Matching

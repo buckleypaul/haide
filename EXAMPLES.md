@@ -76,9 +76,9 @@ haide init
 Or manually add an override:
 
 ```bash
-# Edit ~/.haide/config.toml
-[my-docs-repo]
-"+CLAUDE.md"
+# Edit ~/.haide/config.ini
+[project:my-docs-repo]
++CLAUDE.md
 ```
 
 ### Pattern matching examples
@@ -117,7 +117,7 @@ haide clean --dry-run
 export HAIDE_HOME=~/my-custom-config
 haide init
 
-# Config will be at ~/my-custom-config/config.toml
+# Config will be at ~/my-custom-config/config.ini
 ```
 
 ## Workflow Examples
@@ -133,13 +133,13 @@ haide add-global "AI_SCRATCH.md"
 
 2. Share the config file:
 ```bash
-# Copy ~/.haide/config.toml to team wiki or shared location
-cat ~/.haide/config.toml
+# Copy ~/.haide/config.ini to team wiki or shared location
+cat ~/.haide/config.ini
 ```
 
 3. Team members copy the config and initialize:
 ```bash
-# Copy shared config to ~/.haide/config.toml
+# Copy shared config to ~/.haide/config.ini
 haide init
 ```
 
@@ -175,9 +175,9 @@ git commit -m "Untrack AI files (now managed by haide)"
 ```bash
 # Remove global exclusions (edit config)
 # Keep only project-specific patterns
-[myproject]
-"custom-ai-notes.md"
-"workspace/ai/"
+[project:myproject]
+custom-ai-notes.md
+workspace/ai/
 ```
 
 ## Troubleshooting
@@ -191,7 +191,7 @@ haide info
 echo $HAIDE_HOME
 
 # Recreate config
-rm ~/.haide/config.toml
+rm ~/.haide/config.ini
 haide init  # Creates default config
 ```
 

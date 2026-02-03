@@ -39,7 +39,7 @@ echo "PASS"
 
 # Test 2: Check config was created
 echo -e "\n[Test 2] Config creation"
-if [ ! -f "$HAIDE_HOME/config.toml" ]; then
+if [ ! -f "$HAIDE_HOME/config.ini" ]; then
     echo "FAIL: Config file not created"
     exit 1
 fi
@@ -52,7 +52,7 @@ if ! grep -q "test-pattern.md" .git/info/exclude; then
     echo "FAIL: Pattern not added to exclude file"
     exit 1
 fi
-if ! grep -q "test-pattern.md" "$HAIDE_HOME/config.toml"; then
+if ! grep -q "test-pattern.md" "$HAIDE_HOME/config.ini"; then
     echo "FAIL: Pattern not added to config"
     exit 1
 fi
@@ -70,7 +70,7 @@ echo "PASS"
 # Test 5: Add global pattern
 echo -e "\n[Test 5] Add global pattern"
 $HAIDE_BIN add-global "*.global"
-if ! grep -q "*.global" "$HAIDE_HOME/config.toml"; then
+if ! grep -q "*.global" "$HAIDE_HOME/config.ini"; then
     echo "FAIL: Global pattern not added"
     exit 1
 fi
@@ -106,7 +106,7 @@ git config user.name "Test User"
 git commit -m "Add CLAUDE.md"
 # Now initialize haide - should detect tracked file
 $HAIDE_BIN init <<< "n"  # Answer 'n' to untrack prompt
-if ! grep -q "+CLAUDE.md" "$HAIDE_HOME/config.toml"; then
+if ! grep -q "+CLAUDE.md" "$HAIDE_HOME/config.ini"; then
     echo "FAIL: Override not added for tracked file"
     exit 1
 fi
