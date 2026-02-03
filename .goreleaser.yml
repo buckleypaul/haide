@@ -44,6 +44,7 @@ brews:
       owner: buckleypaul
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    folder: Formula
     homepage: "https://github.com/buckleypaul/haide"
     description: "AI File Exclusion Manager for Git"
     license: "MIT"
