@@ -37,17 +37,24 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Load config
+	// Load global config
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Add pattern to project
-	cfg.AddProjectPattern(repoName, pattern)
+	// Load local config
+	localCfg, err := config.LoadLocal(repoRoot)
+	if err != nil {
+		return fmt.Errorf("failed to load local config: %w", err)
+	}
+
+	// Add pattern to local config
+	localCfg.AddPattern(pattern)
 
 	// Get effective patterns
-	effectivePatterns := cfg.GetEffectivePatterns(repoName)
+	effectivePatterns := cfg.GetEffectivePatternsWithLocal(repoName, localCfg.Patterns)
+	excludePatterns := buildExcludePatterns(effectivePatterns)
 
 	// Load exclude file
 	excludeFile, err := exclude.Load(repoRoot)
@@ -56,7 +63,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Show diff
-	diff := excludeFile.GetDiff(effectivePatterns)
+	diff := excludeFile.GetDiff(excludePatterns)
 	fmt.Println("Changes to .git/info/exclude:")
 	fmt.Println(diff)
 
@@ -65,17 +72,17 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Save config
-	if err := cfg.Save(); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
+	// Save local config
+	if err := localCfg.Save(); err != nil {
+		return fmt.Errorf("failed to save local config: %w", err)
 	}
 
 	// Update exclude file
-	excludeFile.SetManagedContent(effectivePatterns)
+	excludeFile.SetManagedContent(excludePatterns)
 	if err := excludeFile.Save(); err != nil {
 		return fmt.Errorf("failed to save exclude file: %w", err)
 	}
 
-	fmt.Printf("\nAdded pattern '%s' to project '%s'\n", pattern, repoName)
+	fmt.Printf("\nAdded pattern '%s' to %s\n", pattern, localCfg.Path())
 	return nil
 }

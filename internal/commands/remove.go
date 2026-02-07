@@ -37,17 +37,42 @@ func runRemove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Load config
+	// Load global config
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Remove pattern from project
-	cfg.RemoveProjectPattern(repoName, pattern)
+	// Load local config
+	localCfg, err := config.LoadLocal(repoRoot)
+	if err != nil {
+		return fmt.Errorf("failed to load local config: %w", err)
+	}
+
+	// Try removing from local config first
+	removedFromLocal := localCfg.RemovePattern(pattern)
+	removedFromGlobal := false
+
+	// Fallback: try removing from legacy global project patterns
+	if !removedFromLocal {
+		projectPatterns := cfg.GetProjectPatterns(repoName)
+		for _, p := range projectPatterns {
+			if p == pattern {
+				cfg.RemoveProjectPattern(repoName, pattern)
+				removedFromGlobal = true
+				break
+			}
+		}
+	}
+
+	if !removedFromLocal && !removedFromGlobal {
+		fmt.Printf("Pattern '%s' not found in project config\n", pattern)
+		return nil
+	}
 
 	// Get effective patterns
-	effectivePatterns := cfg.GetEffectivePatterns(repoName)
+	effectivePatterns := cfg.GetEffectivePatternsWithLocal(repoName, localCfg.Patterns)
+	excludePatterns := buildExcludePatterns(effectivePatterns)
 
 	// Load exclude file
 	excludeFile, err := exclude.Load(repoRoot)
@@ -56,7 +81,7 @@ func runRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	// Show diff
-	diff := excludeFile.GetDiff(effectivePatterns)
+	diff := excludeFile.GetDiff(excludePatterns)
 	fmt.Println("Changes to .git/info/exclude:")
 	fmt.Println(diff)
 
@@ -65,13 +90,20 @@ func runRemove(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Save config
-	if err := cfg.Save(); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
+	// Save whichever config was modified
+	if removedFromLocal {
+		if err := localCfg.Save(); err != nil {
+			return fmt.Errorf("failed to save local config: %w", err)
+		}
+	}
+	if removedFromGlobal {
+		if err := cfg.Save(); err != nil {
+			return fmt.Errorf("failed to save config: %w", err)
+		}
 	}
 
 	// Update exclude file
-	excludeFile.SetManagedContent(effectivePatterns)
+	excludeFile.SetManagedContent(excludePatterns)
 	if err := excludeFile.Save(); err != nil {
 		return fmt.Errorf("failed to save exclude file: %w", err)
 	}

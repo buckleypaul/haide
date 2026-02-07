@@ -322,6 +322,67 @@ func (c *Config) GetEffectivePatterns(projectName string) []string {
 	return effective
 }
 
+// GetEffectivePatternsWithLocal returns effective patterns merging global,
+// legacy project patterns, and local .haide patterns.
+func (c *Config) GetEffectivePatternsWithLocal(projectName string, localPatterns []string) []string {
+	projectPatterns := c.GetProjectPatterns(projectName)
+
+	// Build override set from both project and local patterns
+	overrides := make(map[string]bool)
+	for _, pattern := range projectPatterns {
+		if strings.HasPrefix(pattern, "+") {
+			overrides[strings.TrimPrefix(pattern, "+")] = true
+		}
+	}
+	for _, pattern := range localPatterns {
+		if strings.HasPrefix(pattern, "+") {
+			overrides[strings.TrimPrefix(pattern, "+")] = true
+		}
+	}
+
+	// Start with global patterns, excluding overridden ones
+	seen := make(map[string]bool)
+	var effective []string
+	for _, pattern := range c.Global {
+		if !overrides[pattern] && !seen[pattern] {
+			effective = append(effective, pattern)
+			seen[pattern] = true
+		}
+	}
+
+	// Add non-override project patterns (legacy)
+	for _, pattern := range projectPatterns {
+		if !strings.HasPrefix(pattern, "+") && !seen[pattern] {
+			effective = append(effective, pattern)
+			seen[pattern] = true
+		}
+	}
+
+	// Add non-override local patterns
+	for _, pattern := range localPatterns {
+		if !strings.HasPrefix(pattern, "+") && !seen[pattern] {
+			effective = append(effective, pattern)
+			seen[pattern] = true
+		}
+	}
+
+	return effective
+}
+
+// MigrateProjectToLocal extracts patterns from a [project:name] section,
+// removes the section, and returns the extracted patterns.
+// The caller is responsible for saving both the Config and LocalConfig.
+func (c *Config) MigrateProjectToLocal(projectName string) []string {
+	patterns := c.Projects[projectName]
+	if len(patterns) == 0 {
+		return nil
+	}
+	extracted := make([]string, len(patterns))
+	copy(extracted, patterns)
+	delete(c.Projects, projectName)
+	return extracted
+}
+
 // Path returns the path to the config file
 func (c *Config) Path() string {
 	return c.path

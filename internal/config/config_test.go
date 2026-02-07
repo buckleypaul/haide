@@ -139,6 +139,105 @@ func TestSaveLoad(t *testing.T) {
 	}
 }
 
+func TestGetEffectivePatternsWithLocal(t *testing.T) {
+	cfg := &Config{
+		Global: []string{"CLAUDE.md", "AGENTS.md", ".ai/"},
+		Projects: map[string][]string{
+			"test-repo": {"legacy-extra.md"},
+		},
+	}
+
+	localPatterns := []string{"+CLAUDE.md", "custom.md"}
+
+	effective := cfg.GetEffectivePatternsWithLocal("test-repo", localPatterns)
+
+	expected := map[string]bool{
+		"AGENTS.md":       true,
+		".ai/":            true,
+		"legacy-extra.md": true,
+		"custom.md":       true,
+	}
+
+	for _, pattern := range effective {
+		if pattern == "CLAUDE.md" {
+			t.Errorf("CLAUDE.md should be overridden but was included")
+		}
+		if pattern == "+CLAUDE.md" {
+			t.Errorf("Override pattern should not appear in effective list")
+		}
+		delete(expected, pattern)
+	}
+
+	if len(expected) > 0 {
+		t.Errorf("Missing expected patterns: %v", expected)
+	}
+}
+
+func TestGetEffectivePatternsWithLocalDedup(t *testing.T) {
+	cfg := &Config{
+		Global: []string{"CLAUDE.md", "AGENTS.md"},
+		Projects: map[string][]string{
+			"test-repo": {"custom.md"},
+		},
+	}
+
+	// local also has custom.md — should not duplicate
+	localPatterns := []string{"custom.md", "extra.md"}
+
+	effective := cfg.GetEffectivePatternsWithLocal("test-repo", localPatterns)
+
+	count := 0
+	for _, p := range effective {
+		if p == "custom.md" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("Expected custom.md once, got %d times", count)
+	}
+}
+
+func TestMigrateProjectToLocal(t *testing.T) {
+	cfg := &Config{
+		Global: []string{"CLAUDE.md"},
+		Projects: map[string][]string{
+			"test-repo": {"+CLAUDE.md", "custom.md"},
+			"other":     {"other.md"},
+		},
+	}
+
+	extracted := cfg.MigrateProjectToLocal("test-repo")
+
+	if len(extracted) != 2 {
+		t.Fatalf("Expected 2 extracted patterns, got %d", len(extracted))
+	}
+	if extracted[0] != "+CLAUDE.md" || extracted[1] != "custom.md" {
+		t.Errorf("Unexpected extracted patterns: %v", extracted)
+	}
+
+	// Section should be removed
+	if _, ok := cfg.Projects["test-repo"]; ok {
+		t.Error("Project section should be removed after migration")
+	}
+
+	// Other project should be unaffected
+	if _, ok := cfg.Projects["other"]; !ok {
+		t.Error("Other project section should still exist")
+	}
+}
+
+func TestMigrateProjectToLocalEmpty(t *testing.T) {
+	cfg := &Config{
+		Global:   []string{"CLAUDE.md"},
+		Projects: map[string][]string{},
+	}
+
+	extracted := cfg.MigrateProjectToLocal("nonexistent")
+	if extracted != nil {
+		t.Errorf("Expected nil for nonexistent project, got %v", extracted)
+	}
+}
+
 func TestParseINIFormat(t *testing.T) {
 	tests := []struct {
 		name        string

@@ -6,12 +6,16 @@ import (
 	"os"
 	"strings"
 
+	"github.com/buckleypaul/haide/internal/config"
 	"github.com/buckleypaul/haide/internal/exclude"
 	"github.com/buckleypaul/haide/internal/git"
 	"github.com/spf13/cobra"
 )
 
-var cleanDryRun bool
+var (
+	cleanDryRun     bool
+	cleanRemoveLocal bool
+)
 
 var cleanCmd = &cobra.Command{
 	Use:   "clean",
@@ -23,6 +27,7 @@ Preserves non-haide entries in the file.`,
 
 func init() {
 	cleanCmd.Flags().BoolVar(&cleanDryRun, "dry-run", false, "Preview changes without applying them")
+	cleanCmd.Flags().BoolVar(&cleanRemoveLocal, "remove-local", false, "Also delete the local .haide config file")
 }
 
 func runClean(cmd *cobra.Command, args []string) error {
@@ -50,7 +55,16 @@ func runClean(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  %s\n", pattern)
 	}
 
+	// Check for local config
+	localCfg, err := config.LoadLocal(repoRoot)
+	if err != nil {
+		return fmt.Errorf("failed to load local config: %w", err)
+	}
+
 	if cleanDryRun {
+		if cleanRemoveLocal && localCfg.Exists() {
+			fmt.Printf("\nWould delete local config: %s\n", localCfg.Path())
+		}
 		fmt.Println("\n(Dry run - no changes applied)")
 		return nil
 	}
@@ -72,6 +86,20 @@ func runClean(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("\nSuccessfully removed haide management")
-	fmt.Println("Note: Config file is preserved for other repositories")
+
+	// Handle local config file
+	if localCfg.Exists() {
+		if cleanRemoveLocal {
+			if err := os.Remove(localCfg.Path()); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to remove local config: %v\n", err)
+			} else {
+				fmt.Printf("Deleted local config: %s\n", localCfg.Path())
+			}
+		} else {
+			fmt.Printf("Note: Local config file still exists: %s (use --remove-local to delete)\n", localCfg.Path())
+		}
+	}
+
+	fmt.Println("Note: Global config file is preserved for other repositories")
 	return nil
 }

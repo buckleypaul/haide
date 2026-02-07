@@ -44,8 +44,24 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	// Load local config
+	localCfg, err := config.LoadLocal(repoRoot)
+	if err != nil {
+		return fmt.Errorf("failed to load local config: %w", err)
+	}
+
+	// Migrate legacy [project:name] patterns to local config
+	globalConfigModified := false
+	if legacyPatterns := cfg.MigrateProjectToLocal(repoName); len(legacyPatterns) > 0 {
+		for _, p := range legacyPatterns {
+			localCfg.AddPattern(p)
+		}
+		globalConfigModified = true
+		fmt.Printf("Migrated %d patterns from global config to local .haide file\n", len(legacyPatterns))
+	}
+
 	// Get effective patterns
-	effectivePatterns := cfg.GetEffectivePatterns(repoName)
+	effectivePatterns := cfg.GetEffectivePatternsWithLocal(repoName, localCfg.Patterns)
 
 	// Check which excluded files are already tracked
 	trackedFiles, err := git.GetTrackedFiles(effectivePatterns)
@@ -54,14 +70,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Add overrides for tracked files
-	needsSave := false
+	localConfigModified := false
 	for _, file := range trackedFiles {
 		for _, pattern := range effectivePatterns {
 			matches, _ := matchFile(file, pattern)
 			if matches {
 				fmt.Printf("File '%s' is tracked but matches exclusion pattern '%s'\n", file, pattern)
-				cfg.AddProjectPattern(repoName, "+"+pattern)
-				needsSave = true
+				localCfg.AddPattern("+" + pattern)
+				localConfigModified = true
 
 				// Ask if user wants to untrack
 				if !initDryRun {
@@ -82,16 +98,24 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Save config if we added overrides
-	if needsSave && !initDryRun {
-		if err := cfg.Save(); err != nil {
-			return fmt.Errorf("failed to save config: %w", err)
+	// Save configs if modified
+	if !initDryRun {
+		if globalConfigModified {
+			if err := cfg.Save(); err != nil {
+				return fmt.Errorf("failed to save config: %w", err)
+			}
 		}
-		fmt.Println("Added overrides to config for tracked files")
+		if localConfigModified || globalConfigModified {
+			if err := localCfg.Save(); err != nil {
+				return fmt.Errorf("failed to save local config: %w", err)
+			}
+			fmt.Println("Saved overrides to local .haide file")
+		}
 	}
 
 	// Recalculate effective patterns after adding overrides
-	effectivePatterns = cfg.GetEffectivePatterns(repoName)
+	effectivePatterns = cfg.GetEffectivePatternsWithLocal(repoName, localCfg.Patterns)
+	excludePatterns := buildExcludePatterns(effectivePatterns)
 
 	// Load exclude file
 	excludeFile, err := exclude.Load(repoRoot)
@@ -100,7 +124,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Show diff
-	diff := excludeFile.GetDiff(effectivePatterns)
+	diff := excludeFile.GetDiff(excludePatterns)
 	fmt.Println("Changes to .git/info/exclude:")
 	fmt.Println(diff)
 
@@ -110,13 +134,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Update exclude file
-	excludeFile.SetManagedContent(effectivePatterns)
+	excludeFile.SetManagedContent(excludePatterns)
 	if err := excludeFile.Save(); err != nil {
 		return fmt.Errorf("failed to save exclude file: %w", err)
 	}
 
 	fmt.Println("\nSuccessfully initialized haide")
 	fmt.Printf("Config: %s\n", cfg.Path())
+	fmt.Printf("Local config: %s\n", localCfg.Path())
 	fmt.Printf("Exclude file: %s\n", excludeFile.Path())
 
 	return nil
